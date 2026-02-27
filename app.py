@@ -3,7 +3,7 @@ import time
 
 st.set_page_config(page_title="Roleplay Goomer", layout="centered")
 
-# Estado da sessão
+# ---------- ESTADO ----------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -12,6 +12,9 @@ if "start_time" not in st.session_state:
 
 if "finished" not in st.session_state:
     st.session_state.finished = False
+
+if "initialized" not in st.session_state:
+    st.session_state.initialized = False
 
 
 # ---------- HEADER ----------
@@ -25,6 +28,25 @@ minutes = elapsed_time // 60
 seconds = elapsed_time % 60
 
 st.info(f"⏱ Tempo de teste: {minutes:02d}:{seconds:02d}")
+
+
+# ---------- MENSAGEM INICIAL DO CLIENTE ----------
+if not st.session_state.initialized:
+    initial_message = """
+Oi, bom dia.
+
+Ontem falei com você sobre um estorno de um pedido que tinha sido cobrado duas vezes.
+
+Hoje vi que o valor foi devolvido duas vezes.
+
+Isso vai me gerar prejuízo.
+
+O que aconteceu?
+"""
+    st.session_state.messages.append(
+        {"role": "assistant", "content": initial_message}
+    )
+    st.session_state.initialized = True
 
 
 # ---------- CHAT ----------
