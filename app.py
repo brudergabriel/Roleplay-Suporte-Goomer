@@ -1,115 +1,109 @@
 import streamlit as st
 import requests
-import datetime
+import json
 
-# CONFIGURAÇÃO DA PÁGINA
-st.set_page_config(page_title="Roleplay - Suporte Goomer", layout="centered")
+# Configuração da página
+st.set_page_config(page_title="Goomer - Sistema de Testes", layout="wide")
 
-# ------------------------
-# ESTADO DA SESSÃO
-# ------------------------
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# URL base do seu agente SmythOS
+AGENT_BASE_URL = "https://seu-agente.smythos.com/api"
 
-if "initialized" not in st.session_state:
-    st.session_state.initialized = False
+# Interface principal
+st.title("🎭 Sistema de Testes - Goomer Support")
 
-if "finished" not in st.session_state:
-    st.session_state.finished = False
+# Abas para diferentes funcionalidades
+tab1, tab2 = st.tabs(["Simulação de Cliente", "Análise de Conversa"])
 
-
-# ------------------------
-# FUNÇÃO PARA ENVIAR À API
-# ------------------------
-def enviar_para_analise(nome, email, vaga, conversa_texto):
-    url = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
-
-    payload = {
-        "nome_candidato": nome,
-        "email": email,
-        "vaga": vaga,
-        "conversa_completa": conversa_texto,
-        "timestamp": str(datetime.datetime.now())
-    }
-
-    try:
-        response = requests.post(url, json=payload, timeout=90)
-        return response.status_code == 200
-    except:
-        return False
-
-
-# ------------------------
-# INTERFACE
-# ------------------------
-st.title("Roleplay - Suporte Goomer 💙")
-st.caption("Simulação de atendimento via chat")
-
-# Dados do candidato
-nome = st.text_input("Nome completo")
-email = st.text_input("Email")
-vaga = st.selectbox("Nível da vaga", ["Suporte Jr", "Suporte Pleno", "Suporte Sr"])
-
-st.divider()
-
-# ------------------------
-# MENSAGEM INICIAL DO CLIENTE
-# ------------------------
-if not st.session_state.initialized:
-    mensagem_inicial = """
-Oi, bom dia.
-
-Ontem falei com você sobre um estorno de um pedido que tinha sido cobrado duas vezes.
-
-Hoje vi que o valor foi devolvido duas vezes.
-
-Isso vai me gerar prejuízo.
-
-O que aconteceu?
-"""
-    st.session_state.messages.append(
-        {"role": "assistant", "content": mensagem_inicial}
+with tab1:
+    st.header("Simular Cliente Problemático")
+    
+    # Inputs para simulação
+    tipo_cliente = st.selectbox(
+        "Tipo de Cliente:",
+        ["impaciente", "confuso", "irritado", "exigente"]
     )
-    st.session_state.initialized = True
+    
+    cenario = st.selectbox(
+        "Cenário:",
+        ["pedido_atrasado", "cobranca_incorreta", "produto_faltando", "app_bug", "cupom_invalido"]
+    )
+    
+    mensagem_candidato = st.text_area("Mensagem do Candidato:", height=100)
+    
+    if st.button("Simular Resposta do Cliente"):
+        if mensagem_candidato:
+            # Chamada para a API do agente
+            payload = {
+                "mensagem_candidato": mensagem_candidato,
+                "tipo_cliente": tipo_cliente,
+                "cenario": cenario
+            }
+            
+            with st.spinner("Gerando resposta do cliente..."):
+                try:
+                    response = requests.post(
+                        f"{AGENT_BASE_URL}/simular_cliente",
+                        json=payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    
+                    if response.status_code == 200:
+                        resultado = response.json()
+                        st.success("Resposta do Cliente:")
+                        st.write(resultado)
+                    else:
+                        st.error(f"Erro: {response.status_code}")
+                        
+                except Exception as e:
+                    st.error(f"Erro na conexão: {str(e)}")
 
-
-# ------------------------
-# CHAT
-# ------------------------
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-if not st.session_state.finished:
-    prompt = st.chat_input("Digite sua resposta...")
-
-    if prompt:
-        st.session_state.messages.append(
-            {"role": "user", "content": prompt}
-        )
-        st.rerun()
-
-
-# ------------------------
-# FINALIZAR TESTE
-# ------------------------
-if not st.session_state.finished:
-    if st.button("Finalizar Teste"):
-        if not nome or not email:
-            st.warning("Preencha nome e email antes de finalizar.")
-        else:
-            st.session_state.finished = True
-
-            # Montar texto completo da conversa
-            conversa_texto = ""
-            for msg in st.session_state.messages:
-                role = "Cliente" if msg["role"] == "assistant" else "Analista"
-                conversa_texto += f"{role}:\n{msg['content']}\n\n"
-
-            sucesso = enviar_para_analise(nome, email, vaga, conversa_texto)
-
-            if sucesso:
-                st.success("Teste enviado com sucesso! ✅")
-                st.info("Nossa equipe analisará seu atendimento.")
-            else:
-                st.error("Erro ao enviar teste. Tente novamente.")
+with tab2:
+    st.header("Analisar Performance do Candidato")
+    
+    # Inputs para análise
+    nome_candidato = st.text_input("Nome do Candidato:")
+    vaga = st.selectbox("Vaga:", ["Suporte Jr", "Suporte Pleno", "Suporte Senior"])
+    conversa_completa = st.text_area("Conversa Completa:", height=200)
+    
+    if st.button("Analisar Performance"):
+        if nome_candidato and conversa_completa:
+            payload = {
+                "nome_candidato": nome_candidato,
+                "conversa_completa": conversa_completa,
+                "vaga": vaga
+            }
+            
+            with st.spinner("Analisando performance..."):
+                try:
+                    response = requests.post(
+                        f"{AGENT_BASE_URL}/analisar_conversa",
+                        json=payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    
+                    if response.status_code == 200:
+                        resultado = response.json()
+                        
+                        # Mostrar resultados de forma organizada
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.metric("Nota Final", f"{resultado.get('nota_final', 0)}/10")
+                            st.write(f"**Classificação:** {resultado.get('classificacao', '')}")
+                        
+                        with col2:
+                            st.write("**Notas por Critério:**")
+                            st.write(f"Conversa: {resultado.get('conversa', 0)}/10")
+                            st.write(f"Escrita: {resultado.get('escrita', 0)}/10")
+                            st.write(f"Empatia: {resultado.get('empatia', 0)}/10")
+                            st.write(f"Investigação: {resultado.get('investigacao', 0)}/10")
+                            st.write(f"Resolução: {resultado.get('resolucao', 0)}/10")
+                        
+                        st.write(f"**Conclusão:** {resultado.get('conclusao', '')}")
+                        st.success("✅ Dados enviados para a planilha!")
+                        
+                    else:
+                        st.error(f"Erro: {response.status_code}")
+                        
+                except Exception as e:
+                    st.error(f"Erro na conexão: {str(e)}")
