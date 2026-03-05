@@ -1,7 +1,6 @@
 import streamlit as st
 import requests
 from datetime import datetime
-import time
 
 # ===== CONFIGURAÇÃO DA PÁGINA =====
 st.set_page_config(
@@ -78,13 +77,6 @@ st.markdown("""
         margin-top: 2rem;
         border: 2px solid #4caf50;
     }
-    .chat-input-container {
-        background-color: white;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-        margin-bottom: 1rem;
-    }
     .initial-message {
         background-color: #fff9c4;
         padding: 15px;
@@ -110,10 +102,11 @@ def init_session_state():
         st.session_state.test_completed = False
     if 'conversation_started' not in st.session_state:
         st.session_state.conversation_started = False
-    if 'initial_message_sent' not in st.session_state:
-        st.session_state.initial_message_sent = False
+    if 'message_counter' not in st.session_state:
+        st.session_state.message_counter = 0
+    if 'processing_message' not in st.session_state:
+        st.session_state.processing_message = False
 
-# Chama a função de inicialização
 init_session_state()
 
 # ===== FUNÇÕES AUXILIARES =====
@@ -131,16 +124,18 @@ def add_client_message(message):
     st.session_state.chat_history.append({
         "sender": "client",
         "message": message,
-        "timestamp": datetime.now()
+        "id": st.session_state.message_counter
     })
+    st.session_state.message_counter += 1
 
 def add_candidate_message(message):
     """Adiciona mensagem do candidato ao histórico"""
     st.session_state.chat_history.append({
         "sender": "candidate",
         "message": message,
-        "timestamp": datetime.now()
+        "id": st.session_state.message_counter
     })
+    st.session_state.message_counter += 1
 
 def format_conversation_for_api():
     """Formata toda a conversa em texto para envio à API"""
@@ -203,12 +198,22 @@ def simulate_additional_client_responses():
     else:
         return "Entendo. Vou aguardar seu retorno."
 
-def reset_conversation():
-    """Reseta toda a conversa para começar novamente"""
-    st.session_state.chat_history = []
-    st.session_state.conversation_started = False
-    st.session_state.test_start_time = None
-    st.session_state.initial_message_sent = False
+def process_new_message(message):
+    """Processa uma nova mensagem do candidato"""
+    if st.session_state.processing_message:
+        return
+    
+    st.session_state.processing_message = True
+    
+    # Adiciona mensagem do candidato
+    add_candidate_message(message.strip())
+    
+    # Simula resposta do cliente (limitada a algumas interações)
+    if len(st.session_state.chat_history) < 10:
+        client_response = simulate_additional_client_responses()
+        add_client_message(client_response)
+    
+    st.session_state.processing_message = False
 
 # ===== INTERFACE PRINCIPAL =====
 def main():
@@ -280,17 +285,14 @@ def main():
                     
                     # Adiciona a mensagem inicial do cliente
                     add_client_message(get_initial_client_message())
-                    st.session_state.initial_message_sent = True
                     
                     st.rerun()
     
     # Interface de chat (aparece após iniciar)
     else:
         # Timer do teste
-        timer_placeholder = st.empty()
-        with timer_placeholder:
-            st.markdown(f'<div class="timer">⏱️ Tempo de teste: {format_timer()}</div>', 
-                       unsafe_allow_html=True)
+        st.markdown(f'<div class="timer">⏱️ Tempo de teste: {format_timer()}</div>', 
+                   unsafe_allow_html=True)
         
         # Título da seção de chat
         st.markdown("### 💬 Chat de Atendimento")
@@ -301,7 +303,7 @@ def main():
             st.markdown('<div class="chat-container">', unsafe_allow_html=True)
             
             # Renderiza todas as mensagens do histórico
-            for i, msg in enumerate(st.session_state.chat_history):
+            for msg in st.session_state.chat_history:
                 if msg["sender"] == "client":
                     st.markdown(f"""
                     <div class="message-client">
@@ -322,38 +324,26 @@ def main():
         # Campo de entrada para nova mensagem
         st.markdown("---")
         
-        with st.container():
-            st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
+        # Usar formulário para controlar o envio
+        with st.form("message_form", clear_on_submit=True):
+            nova_mensagem = st.text_area(
+                "Digite sua resposta:",
+                placeholder="Digite aqui sua resposta ao cliente...",
+                height=100
+            )
             
-            col1, col2 = st.columns([4, 1])
-            
-            with col1:
-                nova_mensagem = st.text_area(
-                    "Digite sua resposta:",
-                    placeholder="Digite aqui sua resposta ao cliente...",
-                    height=100,
-                    key="input_mensagem"
-                )
-            
+            col1, col2, col3 = st.columns([2, 1, 2])
             with col2:
-                st.markdown("<br>", unsafe_allow_html=True)  # Espaçamento
-                enviar_clicked = st.button("📤 Enviar", 
-                                         type="primary", 
-                                         use_container_width=True)
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+                enviar_clicked = st.form_submit_button(
+                    "📤 Enviar", 
+                    type="primary", 
+                    use_container_width=True,
+                    disabled=st.session_state.processing_message
+                )
         
         # Processa o envio de nova mensagem
         if enviar_clicked and nova_mensagem and nova_mensagem.strip():
-            # Adiciona mensagem do candidato
-            add_candidate_message(nova_mensagem.strip())
-            
-            # Simula resposta do cliente (limitada a algumas interações)
-            if len(st.session_state.chat_history) < 10:  # Máximo de 10 mensagens totais
-                time.sleep(1)  # Simula tempo de resposta
-                client_response = simulate_additional_client_responses()
-                add_client_message(client_response)
-            
+            process_new_message(nova_mensagem)
             st.rerun()
         
         # Botões de ação
@@ -362,7 +352,9 @@ def main():
         
         with col1:
             if st.button("🗑️ Limpar Chat", use_container_width=True):
-                reset_conversation()
+                st.session_state.chat_history = []
+                st.session_state.message_counter = 0
+                add_client_message(get_initial_client_message())
                 st.rerun()
         
         with col2:
@@ -401,10 +393,6 @@ def main():
                         st.write("Tente novamente em alguns instantes.")
                 else:
                     st.warning("⚠️ Responda pelo menos 2 mensagens do cliente antes de finalizar o teste.")
-
-        # Auto-atualiza o timer a cada segundo (opcional)
-        if st.session_state.test_start_time:
-            time.sleep(0.1)  # Pequena pausa para performance
 
 # ===== EXECUÇÃO DA APLICAÇÃO =====
 if __name__ == "__main__":
