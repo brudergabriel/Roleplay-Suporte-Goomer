@@ -2,7 +2,10 @@ import streamlit as st
 import requests
 from datetime import datetime
 
-# ===== CONFIGURAÇÃO =====
+# =================================
+# CONFIGURAÇÃO
+# =================================
+
 st.set_page_config(
     page_title="Goomer - Roleplay Suporte",
     page_icon="💙",
@@ -13,59 +16,82 @@ AGENT_SIMULATE_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/sim
 AGENT_ANALYZE_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
 
 
-# ===== ESTADO =====
-def init_session_state():
+# =================================
+# SESSION STATE
+# =================================
 
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+def init_session():
 
-    if "conversation_started" not in st.session_state:
-        st.session_state.conversation_started = False
+    defaults = {
+        "chat_history": [],
+        "conversation_started": False,
+        "processing_message": False,
+        "test_completed": False,
+        "test_start_time": None,
+        "last_user_message": None
+    }
 
-    if "test_completed" not in st.session_state:
-        st.session_state.test_completed = False
-
-    if "processing_message" not in st.session_state:
-        st.session_state.processing_message = False
-
-    if "test_start_time" not in st.session_state:
-        st.session_state.test_start_time = None
-
-    if "last_user_message" not in st.session_state:
-        st.session_state.last_user_message = None
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
-init_session_state()
+init_session()
 
 
-# ===== FUNÇÕES =====
+# =================================
+# CHAT FUNCTIONS
+# =================================
 
-def add_client_message(message):
+def add_client_message(msg):
+
     st.session_state.chat_history.append({
         "sender": "client",
-        "message": message
+        "message": msg
     })
 
 
-def add_candidate_message(message):
+def add_candidate_message(msg):
+
     st.session_state.chat_history.append({
         "sender": "candidate",
-        "message": message
+        "message": msg
     })
 
 
 def format_conversation():
 
-    conversation = ""
+    text = ""
 
     for msg in st.session_state.chat_history:
 
-        sender = "Cliente" if msg["sender"] == "client" else "Analista"
+        role = "Cliente" if msg["sender"] == "client" else "Analista"
 
-        conversation += f"{sender}: {msg['message']}\n"
+        text += f"{role}: {msg['message']}\n"
 
-    return conversation
+    return text
 
+
+# =================================
+# TIMER
+# =================================
+
+def format_timer():
+
+    if not st.session_state.test_start_time:
+        return "00:00"
+
+    delta = datetime.now() - st.session_state.test_start_time
+
+    minutes = int(delta.total_seconds() // 60)
+    seconds = int(delta.total_seconds() % 60)
+
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+# =================================
+# INITIAL MESSAGE
+# =================================
 
 def get_initial_message():
 
@@ -80,11 +106,14 @@ Isso vai me gerar prejuízo.
 O que aconteceu?"""
 
 
-# ===== LLM CLIENTE =====
+# =================================
+# CLIENT LLM
+# =================================
 
 def get_client_llm_response(candidate_message):
 
     payload = {
+
         "mensagem_candidato": candidate_message,
         "historico_conversa": format_conversation(),
         "cenario": "estorno_duplicado"
@@ -102,26 +131,52 @@ def get_client_llm_response(candidate_message):
 
         data = response.json()
 
+        # ---------- tratamento robusto da resposta ----------
+
         if isinstance(data, dict):
 
-            return (
+            possible = (
                 data.get("resposta_cliente")
+                or data.get("mensagem")
                 or data.get("output")
                 or data.get("reply")
                 or data.get("response")
-                or str(data)
             )
 
-        return str(data)
-
-    except Exception as e:
-
-        return "Desculpe, tive um problema técnico. Pode repetir?"
+            if possible and possible != "[]":
+                return possible
 
 
-# ===== PROCESSAMENTO =====
+        if isinstance(data, list) and len(data) > 0:
 
-def process_new_message(message):
+            first = data[0]
+
+            if isinstance(first, dict):
+
+                possible = (
+                    first.get("resposta_cliente")
+                    or first.get("mensagem")
+                    or first.get("output")
+                )
+
+                if possible:
+                    return possible
+
+            return str(first)
+
+
+        return "Entendi... mas ainda estou confuso. Pode explicar melhor?"
+
+    except Exception:
+
+        return "Desculpe, tive um problema técnico agora. Pode repetir?"
+
+
+# =================================
+# PROCESS MESSAGE
+# =================================
+
+def process_message(message):
 
     if st.session_state.processing_message:
         return
@@ -135,33 +190,52 @@ def process_new_message(message):
         if m["sender"] == "candidate"
     ])
 
+    # limite de 8 respostas
+
     if candidate_messages < 8:
 
         with st.spinner("Cliente digitando..."):
 
-            response = get_client_llm_response(message)
+            client_reply = get_client_llm_response(message)
 
-            add_client_message(response)
+            add_client_message(client_reply)
 
     st.session_state.processing_message = False
 
 
-# ===== TIMER =====
+# =================================
+# ANALYSIS API
+# =================================
 
-def format_timer():
+def send_analysis():
 
-    if not st.session_state.test_start_time:
-        return "00:00"
+    payload = {
 
-    elapsed = datetime.now() - st.session_state.test_start_time
+        "nome_candidato": st.session_state.nome,
+        "vaga": st.session_state.vaga,
+        "conversa_completa": format_conversation()
+    }
 
-    minutes = int(elapsed.total_seconds() // 60)
-    seconds = int(elapsed.total_seconds() % 60)
+    try:
 
-    return f"{minutes:02d}:{seconds:02d}"
+        r = requests.post(
+            AGENT_ANALYZE_URL,
+            json=payload,
+            timeout=30
+        )
+
+        r.raise_for_status()
+
+        return True
+
+    except Exception:
+
+        return False
 
 
-# ===== UI =====
+# =================================
+# UI
+# =================================
 
 def main():
 
@@ -191,7 +265,7 @@ def main():
         return
 
 
-    st.write(f"⏱️ Tempo: {format_timer()}")
+    st.write(f"⏱ Tempo: {format_timer()}")
 
     st.divider()
 
@@ -208,7 +282,7 @@ def main():
                 st.markdown(msg["message"])
 
 
-    prompt = st.chat_input("Digite sua resposta...")
+    prompt = st.chat_input("Digite sua resposta")
 
     if (
         prompt
@@ -216,7 +290,7 @@ def main():
         and prompt != st.session_state.last_user_message
     ):
 
-        process_new_message(prompt)
+        process_message(prompt)
 
         st.session_state.last_user_message = prompt
 
@@ -227,34 +301,22 @@ def main():
 
     if st.button("Finalizar Teste"):
 
-        conversation = format_conversation()
-
-        payload = {
-            "nome_candidato": st.session_state.nome,
-            "vaga": st.session_state.vaga,
-            "conversa_completa": conversation
-        }
-
         with st.spinner("Analisando atendimento..."):
 
-            try:
+            success = send_analysis()
 
-                response = requests.post(
-                    AGENT_ANALYZE_URL,
-                    json=payload,
-                    timeout=30
-                )
+        if success:
 
-                response.raise_for_status()
+            st.success("Teste enviado com sucesso!")
 
-                st.success("Teste enviado com sucesso!")
+            st.session_state.test_completed = True
 
-                st.session_state.test_completed = True
+        else:
 
-            except Exception as e:
+            st.error("Erro ao enviar teste.")
 
-                st.error("Erro ao enviar teste.")
 
+# =================================
 
 if __name__ == "__main__":
     main()
