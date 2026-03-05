@@ -9,8 +9,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# URL da API do seu agente SmythOS
-AGENT_API_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
+# URLs da API do seu agente SmythOS
+AGENT_SIMULATE_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/simular_cliente"
+AGENT_ANALYZE_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
 
 # ===== ESTILOS CSS =====
 st.markdown("""
@@ -88,6 +89,17 @@ st.markdown("""
         clear: both;
         height: 0;
     }
+    .typing-indicator {
+        background-color: #e3f2fd;
+        padding: 10px 15px;
+        border-radius: 15px 15px 15px 5px;
+        margin: 10px 0;
+        max-width: 70%;
+        float: left;
+        clear: both;
+        font-style: italic;
+        color: #666;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -106,6 +118,8 @@ def init_session_state():
         st.session_state.message_counter = 0
     if 'processing_message' not in st.session_state:
         st.session_state.processing_message = False
+    if 'client_persona' not in st.session_state:
+        st.session_state.client_persona = "irritado"  # Cliente inicialmente irritado
 
 init_session_state()
 
@@ -155,7 +169,7 @@ def send_to_analysis_api(nome_candidato, conversa_completa, vaga):
     
     try:
         response = requests.post(
-            AGENT_API_URL,
+            AGENT_ANALYZE_URL,
             json=payload,
             headers={"Content-Type": "application/json"},
             timeout=30
@@ -166,7 +180,7 @@ def send_to_analysis_api(nome_candidato, conversa_completa, vaga):
         return {"success": False, "error": str(e)}
 
 def get_initial_client_message():
-    """Retorna a mensagem inicial específica do cliente"""
+    """Retorna a mensagem inicial específica do cliente sobre estorno duplicado"""
     return """Oi, bom dia.
 
 Ontem falei com vocês sobre um estorno de um pedido que tinha sido cobrado duas vezes.
@@ -177,26 +191,55 @@ Isso vai me gerar prejuízo.
 
 O que aconteceu?"""
 
-def simulate_additional_client_responses():
-    """Simula respostas adicionais do cliente baseadas no contexto"""
-    responses = [
-        "Entendi sua explicação, mas preciso de uma solução rápida.",
-        "Quanto tempo vai demorar para resolver isso?",
-        "Já tive outros problemas com vocês antes.",
-        "Espero que isso não aconteça novamente.",
-        "Obrigado pela ajuda, mas quero acompanhar o processo.",
-        "Quando posso esperar uma resposta definitiva?",
-        "Vou aguardar o contato de vocês então."
-    ]
+def get_client_llm_response(candidate_message):
+    """Chama a LLM do SmythOS para simular resposta do cliente"""
+    # Define cenário específico do estorno duplicado
+    cenario = "estorno_duplicado"
     
-    # Conta apenas mensagens do cliente (excluindo a inicial)
-    client_messages = len([m for m in st.session_state.chat_history 
-                          if m["sender"] == "client"]) - 1
+    # Ajusta persona do cliente baseado no progresso da conversa
+    candidate_msg_count = len([m for m in st.session_state.chat_history if m["sender"] == "candidate"])
     
-    if client_messages < len(responses):
-        return responses[client_messages]
+    if candidate_msg_count <= 1:
+        persona = "irritado"  # Início: cliente irritado
+    elif candidate_msg_count <= 3:
+        persona = "impaciente"  # Meio: impaciente mas ouvindo
     else:
-        return "Entendo. Vou aguardar seu retorno."
+        persona = "exigente"  # Final: mais exigente, quer garantias
+    
+    payload = {
+        "mensagem_candidato": candidate_message,
+        "tipo_cliente": persona,
+        "cenario": cenario
+    }
+    
+    try:
+        response = requests.post(
+            AGENT_SIMULATE_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30
+        )
+        response.raise_for_status()
+        
+        # Extrai resposta do cliente da resposta da API
+        data = response.json()
+        
+        # A resposta pode vir em diferentes formatos dependendo da sua configuração
+        if isinstance(data, dict):
+            # Tenta diferentes chaves possíveis
+            client_response = (data.get("resposta_cliente") or 
+                             data.get("output") or 
+                             data.get("reply") or 
+                             data.get("response") or
+                             str(data))
+        else:
+            client_response = str(data)
+            
+        return client_response
+        
+    except requests.exceptions.RequestException as e:
+        # Fallback para resposta de erro
+        return f"Desculpe, tive um problema técnico. Você pode repetir? (Erro: {str(e)})"
 
 def process_new_message(message):
     """Processa uma nova mensagem do candidato"""
@@ -208,10 +251,16 @@ def process_new_message(message):
     # Adiciona mensagem do candidato
     add_candidate_message(message.strip())
     
-    # Simula resposta do cliente (limitada a algumas interações)
-    if len(st.session_state.chat_history) < 10:
-        client_response = simulate_additional_client_responses()
-        add_client_message(client_response)
+    # Chama a LLM para gerar resposta do cliente (limitado a 8 trocas)
+    if len(st.session_state.chat_history) < 16:  # 8 do candidato + 8 do cliente
+        try:
+            # Mostra indicador de digitação temporariamente
+            with st.spinner("Cliente está digitando..."):
+                client_response = get_client_llm_response(message.strip())
+                add_client_message(client_response)
+        except Exception as e:
+            # Em caso de erro, usa resposta padrão
+            add_client_message("Hmm, parece que tive um problema. Pode explicar novamente?")
     
     st.session_state.processing_message = False
 
@@ -260,20 +309,30 @@ def main():
                     help="Selecione o nível da vaga para a qual está se candidatando"
                 )
                 
-                # Instrução sobre o teste
+                # Contexto do cenário
                 st.markdown("""
                 <div class="initial-message">
-                    <strong>📝 Instruções do Teste:</strong><br>
-                    • Você receberá uma mensagem de um cliente<br>
-                    • Responda como um analista de suporte<br>
-                    • Seja educado, empático e resolutivo<br>
-                    • O teste será cronometrado<br>
-                    • Clique em "Finalizar Teste" quando terminar
+                    <strong>📝 Cenário do Teste:</strong><br>
+                    • Cliente solicitou estorno de pedido cobrado em duplicidade<br>
+                    • Estorno foi processado duas vezes por erro<br>
+                    • Cliente está preocupado com prejuízo financeiro<br>
+                    • <strong>Seja empático, resolutivo e proativo!</strong>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Instruções
+                st.markdown("""
+                <div class="initial-message">
+                    <strong>⚡ Como funciona:</strong><br>
+                    • IA simula cliente real com base nas suas respostas<br>
+                    • Conversas dinâmicas e contextualizadas<br>
+                    • Teste cronometrado e gravado<br>
+                    • Análise automática do atendimento
                 </div>
                 """, unsafe_allow_html=True)
                 
                 # Botão para iniciar
-                if st.button("🚀 Iniciar Simulação", 
+                if st.button("🚀 Iniciar Simulação com IA", 
                            type="primary", 
                            disabled=not nome_candidato,
                            use_container_width=True):
@@ -296,6 +355,7 @@ def main():
         
         # Título da seção de chat
         st.markdown("### 💬 Chat de Atendimento")
+        st.markdown("*🤖 Cliente simulado por IA - Cenário: Estorno Duplicado*")
         
         # Container do histórico de mensagens
         chat_container = st.container()
@@ -328,8 +388,9 @@ def main():
         with st.form("message_form", clear_on_submit=True):
             nova_mensagem = st.text_area(
                 "Digite sua resposta:",
-                placeholder="Digite aqui sua resposta ao cliente...",
-                height=100
+                placeholder="Como você resolveria essa situação de estorno duplicado?",
+                height=100,
+                disabled=st.session_state.processing_message
             )
             
             col1, col2, col3 = st.columns([2, 1, 2])
@@ -351,34 +412,45 @@ def main():
         col1, col2, col3 = st.columns([1, 1, 1])
         
         with col1:
-            if st.button("🗑️ Limpar Chat", use_container_width=True):
+            if st.button("🗑️ Reiniciar Chat", use_container_width=True):
                 st.session_state.chat_history = []
                 st.session_state.message_counter = 0
+                st.session_state.client_persona = "irritado"
                 add_client_message(get_initial_client_message())
                 st.rerun()
         
         with col2:
-            # Mostra contador de mensagens
+            # Mostra contador de mensagens e persona atual
             total_messages = len(st.session_state.chat_history)
             candidate_messages = len([m for m in st.session_state.chat_history 
                                     if m["sender"] == "candidate"])
-            st.write(f"📊 Mensagens: {candidate_messages} suas, {total_messages - candidate_messages} do cliente")
+            
+            # Determina persona atual
+            if candidate_messages <= 1:
+                persona = "😠 Irritado"
+            elif candidate_messages <= 3:
+                persona = "⏳ Impaciente"
+            else:
+                persona = "🎯 Exigente"
+                
+            st.write(f"📊 Suas: {candidate_messages} | Cliente: {persona}")
         
         with col3:
             if st.button("✅ Finalizar Teste", 
                         type="primary", 
-                        use_container_width=True):
+                        use_container_width=True,
+                        disabled=st.session_state.processing_message):
                 
                 # Validação mínima
                 candidate_messages = len([m for m in st.session_state.chat_history 
                                         if m["sender"] == "candidate"])
                 
-                if candidate_messages >= 2:  # Mínimo de 2 respostas do candidato
+                if candidate_messages >= 3:  # Mínimo de 3 respostas para cenário complexo
                     # Prepara dados para envio
                     conversa_formatada = format_conversation_for_api()
                     
                     # Envia para análise
-                    with st.spinner("🔄 Enviando teste para análise..."):
+                    with st.spinner("🔄 Enviando teste para análise inteligente..."):
                         result = send_to_analysis_api(
                             st.session_state.nome_candidato, 
                             conversa_formatada, 
@@ -392,7 +464,7 @@ def main():
                         st.error(f"❌ Erro ao enviar teste: {result['error']}")
                         st.write("Tente novamente em alguns instantes.")
                 else:
-                    st.warning("⚠️ Responda pelo menos 2 mensagens do cliente antes de finalizar o teste.")
+                    st.warning("⚠️ Para um cenário complexo como este, responda pelo menos 3 mensagens do cliente.")
 
 # ===== EXECUÇÃO DA APLICAÇÃO =====
 if __name__ == "__main__":
