@@ -231,21 +231,21 @@ elif not st.session_state.test_finished:
 
     user_input = st.chat_input("Digite sua resposta")
 
-    if user_input:
+if user_input:
 
-        st.session_state.messages.append(
-            {"role": "analista", "content": user_input}
-        )
+    st.session_state.messages.append(
+        {"role": "analista", "content": user_input}
+    )
 
-        st.session_state.interaction_count += 1
+    st.session_state.interaction_count += 1
 
-        client_reply = get_client_llm_response(user_input)
+    client_reply = get_client_llm_response(user_input)
 
-        st.session_state.messages.append(
-            {"role": "cliente", "content": client_reply}
-        )
+    st.session_state.messages.append(
+        {"role": "cliente", "content": client_reply}
+    )
 
-        st.rerun()
+    st.rerun()
 
     # FINALIZAR TESTE
 
