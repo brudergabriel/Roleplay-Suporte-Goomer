@@ -4,20 +4,20 @@ import random
 import time
 from datetime import datetime
 
-# ==============================
+# =============================
 # CONFIGURAÇÕES
-# ==============================
+# =============================
 
 CLIENT_AGENT_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/simular_cliente"
+
 ANALYSIS_API_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
 
 MAX_MESSAGES = 20
 MAX_INTERACTIONS = 12
 
-
-# ==============================
+# =============================
 # CONFIG STREAMLIT
-# ==============================
+# =============================
 
 st.set_page_config(
     page_title="Roleplay - Suporte Goomer",
@@ -28,10 +28,9 @@ st.set_page_config(
 st.title("Roleplay - Suporte Goomer 💙")
 st.caption("Simulação de atendimento via chat")
 
-
-# ==============================
+# =============================
 # SESSION STATE
-# ==============================
+# =============================
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -48,23 +47,28 @@ if "test_finished" not in st.session_state:
 if "start_time" not in st.session_state:
     st.session_state.start_time = None
 
+if "nome" not in st.session_state:
+    st.session_state.nome = ""
 
-# ==============================
+if "vaga" not in st.session_state:
+    st.session_state.vaga = ""
+
+# =============================
 # PERSONA DO CLIENTE
-# ==============================
+# =============================
 
 def get_client_persona():
-    return random.choice([
+    personas = [
         "impaciente",
         "confuso",
         "irritado",
         "exigente"
-    ])
+    ]
+    return random.choice(personas)
 
-
-# ==============================
-# RESPOSTA DO CLIENTE
-# ==============================
+# =============================
+# CLIENTE SIMULADO
+# =============================
 
 def get_client_response(message):
 
@@ -84,14 +88,19 @@ def get_client_response(message):
 
         data = response.json()
 
-        return (
-            data.get("resposta")
-            or data.get("reply")
-            or data.get("response")
-            or "Entendi. Pode explicar melhor?"
-        )
+        if isinstance(data, dict):
 
-    except:
+            return (
+                data.get("resposta")
+                or data.get("reply")
+                or data.get("response")
+                or "Pode explicar melhor?"
+            )
+
+        return str(data)
+
+    except Exception:
+
         fallback = [
             "Tá, mas como vocês vão resolver isso?",
             "Quanto tempo vai levar?",
@@ -101,10 +110,9 @@ def get_client_response(message):
 
         return random.choice(fallback)
 
-
-# ==============================
+# =============================
 # FORMATAR CONVERSA
-# ==============================
+# =============================
 
 def format_conversation():
 
@@ -120,10 +128,9 @@ def format_conversation():
 
     return conversation
 
-
-# ==============================
-# ENVIAR PARA A IA
-# ==============================
+# =============================
+# ENVIAR PARA ANÁLISE
+# =============================
 
 def send_to_analysis():
 
@@ -141,13 +148,12 @@ def send_to_analysis():
             timeout=60
         )
 
-    except:
+    except Exception:
         pass
 
-
-# ==============================
+# =============================
 # TELA INICIAL
-# ==============================
+# =============================
 
 if not st.session_state.test_started:
 
@@ -185,12 +191,11 @@ O que aconteceu?"""
             st.rerun()
 
         else:
-            st.warning("Informe seu nome para iniciar.")
+            st.warning("Informe seu nome para iniciar o teste.")
 
-
-# ==============================
+# =============================
 # CHAT
-# ==============================
+# =============================
 
 elif not st.session_state.test_finished:
 
@@ -203,7 +208,7 @@ elif not st.session_state.test_finished:
 
     st.divider()
 
-    # HISTÓRICO
+    # HISTÓRICO DO CHAT
 
     for msg in st.session_state.messages:
 
@@ -220,7 +225,7 @@ elif not st.session_state.test_finished:
     if len(st.session_state.messages) > MAX_MESSAGES:
         st.session_state.messages = st.session_state.messages[-MAX_MESSAGES:]
 
-    # INPUT
+    # INPUT DO CHAT
 
     if st.session_state.interaction_count < MAX_INTERACTIONS:
 
@@ -235,8 +240,17 @@ elif not st.session_state.test_finished:
 
             st.session_state.interaction_count += 1
 
-            with st.spinner("Cliente digitando..."):
-                reply = get_client_response(user_input)
+            try:
+
+                with st.spinner("Cliente digitando..."):
+                    reply = get_client_response(user_input)
+
+            except Exception:
+
+                reply = "Desculpe, tive um problema para responder."
+
+            if not reply:
+                reply = "Pode explicar melhor?"
 
             st.session_state.messages.append({
                 "role": "cliente",
@@ -249,6 +263,8 @@ elif not st.session_state.test_finished:
 
         st.warning("Limite de interações atingido.")
 
+    # FINALIZAR TESTE
+
     if st.button("Finalizar teste"):
 
         send_to_analysis()
@@ -257,10 +273,9 @@ elif not st.session_state.test_finished:
 
         st.rerun()
 
-
-# ==============================
+# =============================
 # FINAL
-# ==============================
+# =============================
 
 else:
 
