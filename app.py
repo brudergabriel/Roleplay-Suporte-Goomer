@@ -2,18 +2,17 @@ import streamlit as st
 import requests
 import random
 import time
-from datetime import datetime
 
 # =============================
 # CONFIGURAÇÕES
 # =============================
 
 CLIENT_AGENT_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/simular_cliente"
-
 ANALYSIS_API_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
 
 MAX_MESSAGES = 20
 MAX_INTERACTIONS = 12
+
 
 # =============================
 # CONFIG STREAMLIT
@@ -27,6 +26,7 @@ st.set_page_config(
 
 st.title("Roleplay - Suporte Goomer 💙")
 st.caption("Simulação de atendimento via chat")
+
 
 # =============================
 # SESSION STATE
@@ -53,18 +53,22 @@ if "nome" not in st.session_state:
 if "vaga" not in st.session_state:
     st.session_state.vaga = ""
 
+
 # =============================
-# PERSONA DO CLIENTE
+# PERSONA CLIENTE
 # =============================
 
 def get_client_persona():
+
     personas = [
         "impaciente",
         "confuso",
         "irritado",
         "exigente"
     ]
+
     return random.choice(personas)
+
 
 # =============================
 # CLIENTE SIMULADO
@@ -99,16 +103,17 @@ def get_client_response(message):
 
         return str(data)
 
-    except Exception:
+    except:
 
-        fallback = [
+        fallbacks = [
             "Tá, mas como vocês vão resolver isso?",
             "Quanto tempo vai levar?",
             "Mas isso resolve o prejuízo?",
             "Vocês conseguem verificar isso agora?"
         ]
 
-        return random.choice(fallback)
+        return random.choice(fallbacks)
+
 
 # =============================
 # FORMATAR CONVERSA
@@ -122,14 +127,14 @@ def format_conversation():
 
         if msg["role"] == "cliente":
             conversation += f"Cliente: {msg['content']}\n\n"
-
         else:
             conversation += f"Analista: {msg['content']}\n\n"
 
     return conversation
 
+
 # =============================
-# ENVIAR PARA ANÁLISE
+# ENVIAR PARA A IA
 # =============================
 
 def send_to_analysis():
@@ -148,8 +153,9 @@ def send_to_analysis():
             timeout=60
         )
 
-    except Exception:
+    except:
         pass
+
 
 # =============================
 # TELA INICIAL
@@ -191,7 +197,9 @@ O que aconteceu?"""
             st.rerun()
 
         else:
-            st.warning("Informe seu nome para iniciar o teste.")
+
+            st.warning("Informe seu nome para iniciar.")
+
 
 # =============================
 # CHAT
@@ -208,7 +216,7 @@ elif not st.session_state.test_finished:
 
     st.divider()
 
-    # HISTÓRICO DO CHAT
+    # HISTÓRICO
 
     for msg in st.session_state.messages:
 
@@ -220,18 +228,20 @@ elif not st.session_state.test_finished:
             with st.chat_message("user"):
                 st.write(msg["content"])
 
+
     # LIMITAR HISTÓRICO
 
     if len(st.session_state.messages) > MAX_MESSAGES:
         st.session_state.messages = st.session_state.messages[-MAX_MESSAGES:]
 
-    # INPUT DO CHAT
+
+    # INPUT
 
     if st.session_state.interaction_count < MAX_INTERACTIONS:
 
         user_input = st.chat_input("Digite sua resposta...")
 
-        if user_input:
+        if user_input is not None and user_input.strip() != "":
 
             st.session_state.messages.append({
                 "role": "analista",
@@ -245,7 +255,7 @@ elif not st.session_state.test_finished:
                 with st.spinner("Cliente digitando..."):
                     reply = get_client_response(user_input)
 
-            except Exception:
+            except:
 
                 reply = "Desculpe, tive um problema para responder."
 
@@ -263,6 +273,7 @@ elif not st.session_state.test_finished:
 
         st.warning("Limite de interações atingido.")
 
+
     # FINALIZAR TESTE
 
     if st.button("Finalizar teste"):
@@ -272,6 +283,7 @@ elif not st.session_state.test_finished:
         st.session_state.test_finished = True
 
         st.rerun()
+
 
 # =============================
 # FINAL
