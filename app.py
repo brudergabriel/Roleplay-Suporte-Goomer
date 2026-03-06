@@ -79,9 +79,19 @@ def get_client_persona():
 # =============================
 
 def get_client_response(message):
-
+    # Construir histórico completo
+    conversation = ""
+    for msg in st.session_state.messages:
+        if msg["role"] == "cliente":
+            conversation += f"Cliente: {msg['content']}\n"
+        else:
+            conversation += f"Analista: {msg['content']}\n"
+    
+    # Adicionar mensagem atual
+    conversation += f"Analista: {message}\n"
+    
     payload = {
-        "mensagem_candidato": message,
+        "historico_conversa": conversation,  # ✅ CORRETO
         "tipo_cliente": get_client_persona(),
         "cenario": "estorno_duplicado"
     }
