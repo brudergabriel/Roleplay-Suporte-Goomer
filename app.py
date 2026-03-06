@@ -8,6 +8,7 @@ import time
 # =============================
 
 CLIENT_AGENT_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/simular_cliente"
+
 ANALYSIS_API_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/analisar_conversa"
 
 MAX_MESSAGES = 20
@@ -37,6 +38,9 @@ if "messages" not in st.session_state:
 
 if "interaction_count" not in st.session_state:
     st.session_state.interaction_count = 0
+
+if "processing" not in st.session_state:
+    st.session_state.processing = False
 
 if "test_started" not in st.session_state:
     st.session_state.test_started = False
@@ -87,7 +91,7 @@ def get_client_response(message):
         response = requests.post(
             CLIENT_AGENT_URL,
             json=payload,
-            timeout=25
+            timeout=20
         )
 
         data = response.json()
@@ -127,6 +131,7 @@ def format_conversation():
 
         if msg["role"] == "cliente":
             conversation += f"Cliente: {msg['content']}\n\n"
+
         else:
             conversation += f"Analista: {msg['content']}\n\n"
 
@@ -134,7 +139,7 @@ def format_conversation():
 
 
 # =============================
-# ENVIAR PARA A IA
+# ENVIAR PARA IA
 # =============================
 
 def send_to_analysis():
@@ -235,13 +240,18 @@ elif not st.session_state.test_finished:
         st.session_state.messages = st.session_state.messages[-MAX_MESSAGES:]
 
 
-    # INPUT
+    # INPUT CHAT
 
     if st.session_state.interaction_count < MAX_INTERACTIONS:
 
         user_input = st.chat_input("Digite sua resposta...")
 
-        if user_input is not None and user_input.strip() != "":
+        if user_input and not st.session_state.processing:
+
+            if user_input.strip() == "":
+                st.stop()
+
+            st.session_state.processing = True
 
             st.session_state.messages.append({
                 "role": "analista",
@@ -266,6 +276,8 @@ elif not st.session_state.test_finished:
                 "role": "cliente",
                 "content": reply
             })
+
+            st.session_state.processing = False
 
             st.rerun()
 
