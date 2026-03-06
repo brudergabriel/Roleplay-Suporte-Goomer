@@ -75,7 +75,6 @@ def get_client_response(message):
         role = "Cliente" if msg["role"] == "cliente" else "Analista"
         conversation += f"{role}: {msg['content']}\n"
     
-    # Adiciona mensagem atual
     conversation += f"Analista: {message}\n"
 
     payload = {
@@ -83,6 +82,12 @@ def get_client_response(message):
         "tipo_cliente": get_client_persona(),
         "cenario": "estorno_duplicado"
     }
+
+    # 🔧 DEBUG: Adicione estas linhas
+    print("=== DEBUG ===")
+    print("Histórico enviado:", conversation)
+    print("Payload completo:", payload)
+    print("=============")
 
     try:
         response = requests.post(CLIENT_AGENT_URL, json=payload, timeout=20)
