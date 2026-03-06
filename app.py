@@ -16,7 +16,7 @@ ANALYSIS_API_URL = "https://cmm3ufw1v9rn2ih5tr5uohspm.agent.a.smyth.ai/api/anali
 
 st.set_page_config(
     page_title="Roleplay - Suporte Goomer",
-    page_icon="💙",
+    page_icon="💙", 
     layout="centered"
 )
 
@@ -58,53 +58,46 @@ if "vaga" not in st.session_state:
 def get_client_persona():
     personas = [
         "impaciente",
-        "confuso", 
-        "irritado",
+        "confuso",
+        "irritado", 
         "exigente"
     ]
     return random.choice(personas)
 
 # =============================
-# CLIENTE SIMULADO (CORRIGIDO)
+# CLIENTE SIMULADO
 # =============================
 
 def get_client_response(message):
-    # ✅ CORREÇÃO 1: Monta o histórico completo da conversa
+    # Monta histórico completo
     conversation = ""
     for msg in st.session_state.messages:
         role = "Cliente" if msg["role"] == "cliente" else "Analista"
         conversation += f"{role}: {msg['content']}\n"
     
-    # Adiciona a mensagem atual do analista
+    # Adiciona mensagem atual
     conversation += f"Analista: {message}\n"
 
     payload = {
-        "historico_conversa": conversation,  # ✅ CORREÇÃO 1: Nome correto do parâmetro
+        "historico_conversa": conversation,
         "tipo_cliente": get_client_persona(),
         "cenario": "estorno_duplicado"
     }
 
     try:
-        response = requests.post(
-            CLIENT_AGENT_URL,
-            json=payload,
-            timeout=20
-        )
-        
+        response = requests.post(CLIENT_AGENT_URL, json=payload, timeout=20)
         data = response.json()
         
         if isinstance(data, dict):
-            # ✅ CORREÇÃO 2: Busca o campo correto "Output"
             return data.get("Output", "Pode explicar melhor?")
         
         return str(data)
         
     except Exception as e:
-        print(f"Erro na API: {e}")  # Para debug
         fallbacks = [
             "Tá, mas como vocês vão resolver isso?",
-            "Quanto tempo vai levar?", 
-            "Mas isso resolve o prejuízo?",
+            "Quanto tempo vai levar?",
+            "Mas isso resolve o prejuízo?", 
             "Vocês conseguem verificar isso agora?"
         ]
         return random.choice(fallbacks)
@@ -132,13 +125,8 @@ def send_to_analysis():
         "conversa_completa": format_conversation(),
         "vaga": st.session_state.vaga
     }
-
     try:
-        requests.post(
-            ANALYSIS_API_URL,
-            json=payload,
-            timeout=60
-        )
+        requests.post(ANALYSIS_API_URL, json=payload, timeout=60)
     except:
         pass
 
@@ -148,10 +136,7 @@ def send_to_analysis():
 
 if not st.session_state.test_started:
     nome = st.text_input("Seu nome")
-    vaga = st.selectbox(
-        "Nível da vaga",
-        ["Suporte Jr", "Suporte Pleno", "Suporte Sr"]
-    )
+    vaga = st.selectbox("Nível da vaga", ["Suporte Jr", "Suporte Pleno", "Suporte Sr"])
 
     if st.button("Iniciar teste"):
         if nome:
@@ -198,43 +183,36 @@ elif not st.session_state.test_finished:
             with st.chat_message("user"):
                 st.write(msg["content"])
 
-    # LIMITAR HISTÓRICO
-    if len(st.session_state.messages) > MAX_MESSAGES:
-        st.session_state.messages = st.session_state.messages[-MAX_MESSAGES:]
+    # INPUT CHAT (SEM LIMITES)
+    user_input = st.chat_input("Digite sua resposta...")
+    
+    if user_input and not st.session_state.processing:
+        if user_input.strip() == "":
+            st.stop()
 
-    # INPUT CHAT
-    if st.session_state.interaction_count < MAX_INTERACTIONS:
-        user_input = st.chat_input("Digite sua resposta...")
-        
-        if user_input and not st.session_state.processing:
-            if user_input.strip() == "":
-                st.stop()
+        st.session_state.processing = True
+        st.session_state.messages.append({
+            "role": "analista",
+            "content": user_input
+        })
+        st.session_state.interaction_count += 1
 
-            st.session_state.processing = True
-            st.session_state.messages.append({
-                "role": "analista", 
-                "content": user_input
-            })
-            st.session_state.interaction_count += 1
+        try:
+            with st.spinner("Cliente digitando..."):
+                reply = get_client_response(user_input)
+        except:
+            reply = "Desculpe, tive um problema para responder."
 
-            try:
-                with st.spinner("Cliente digitando..."):
-                    reply = get_client_response(user_input)
-            except:
-                reply = "Desculpe, tive um problema para responder."
+        if not reply:
+            reply = "Pode explicar melhor?"
 
-            if not reply:
-                reply = "Pode explicar melhor?"
+        st.session_state.messages.append({
+            "role": "cliente", 
+            "content": reply
+        })
 
-            st.session_state.messages.append({
-                "role": "cliente",
-                "content": reply
-            })
-
-            st.session_state.processing = False
-            st.rerun()
-    else:
-        st.warning("Limite de interações atingido.")
+        st.session_state.processing = False
+        st.rerun()
 
     # FINALIZAR TESTE
     if st.button("Finalizar teste"):
